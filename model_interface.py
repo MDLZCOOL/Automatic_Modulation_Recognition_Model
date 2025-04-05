@@ -17,7 +17,7 @@ class ModulationClassifier:
         class TrainedModel(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.fc1 = nn.Linear(1024, 512)
+                self.fc1 = nn.Linear(2048, 512)
                 self.bn1 = nn.BatchNorm1d(512)
                 self.fc2 = nn.Linear(512, 256)
                 self.bn2 = nn.BatchNorm1d(256)
@@ -61,28 +61,40 @@ class ModulationClassifier:
         if not isinstance(input_data, (list, np.ndarray, torch.Tensor)):
             raise TypeError("输入必须是list、numpy数组或PyTorch张量")
             
-        if len(input_data) != 1024:
-            raise ValueError(f"输入长度必须为1024，当前长度: {len(input_data)}")
+        if len(input_data) != 2048:
+            raise ValueError(f"输入长度必须为2048，当前长度: {len(input_data)}")
             
         if isinstance(input_data, list):
             if not all(isinstance(x, (int, float)) for x in input_data):
                 raise ValueError("列表包含非数值类型元素")
 
+    def _normalize_data(self, data):
+        """归一化数据"""
+        min_val = np.min(data)
+        max_val = np.max(data)
+        return (data - min_val) / (max_val - min_val)
+
     def predict(self, input_data, return_prob=False):
         """
         执行预测
-        :param input_data: 输入数据（1024长度）
+        :param input_data: 输入数据（2048长度）
         :param return_prob: 是否返回概率分布
         :return: 预测结果（类别或概率）
         """
         # 输入验证
         self._validate_input(input_data)
         
+        # 转换为numpy数组（如果需要）
+        if isinstance(input_data, torch.Tensor):
+            input_data = input_data.cpu().numpy()
+        elif isinstance(input_data, list):
+            input_data = np.array(input_data)
+        
+        # 归一化处理
+        input_data = self._normalize_data(input_data)
+        
         # 转换为Tensor
-        if not isinstance(input_data, torch.Tensor):
-            tensor_input = torch.tensor(input_data, dtype=torch.float32)
-        else:
-            tensor_input = input_data.to(torch.float32)
+        tensor_input = torch.tensor(input_data, dtype=torch.float32)
         
         # 设备转移和维度调整
         tensor_input = tensor_input.to(self.device).unsqueeze(0)  # 添加batch维度
@@ -102,9 +114,19 @@ class ModulationClassifier:
     def batch_predict(self, batch_data):
         """
         批量预测
-        :param batch_data: 形状为[N, 1024]的数组
+        :param batch_data: 形状为[N, 2048]的数组
         :return: 预测结果列表
         """
+        # 转换为numpy数组（如果需要）
+        if isinstance(batch_data, torch.Tensor):
+            batch_data = batch_data.cpu().numpy()
+        elif isinstance(batch_data, list):
+            batch_data = np.array(batch_data)
+        
+        # 对每个样本进行归一化处理
+        batch_data = np.array([self._normalize_data(sample) for sample in batch_data])
+        
+        # 转换为Tensor
         tensor_batch = torch.tensor(batch_data, dtype=torch.float32).to(self.device)
         
         with torch.no_grad():
@@ -120,8 +142,9 @@ if __name__ == "__main__":
     classifier = ModulationClassifier()
     
     # 生成测试数据（示例）
-    test_data = np.random.randn(1024)  # 随机生成1024长度的数据
-    
+    test_data = np.random.randn(2048)  # 随机生成2048长度的数据
+
+
     # 单样本预测
     try:
         # 获取类别预测
@@ -135,6 +158,6 @@ if __name__ == "__main__":
         print(f"预测出错: {str(e)}")
     
     # 批量预测示例
-    batch_test = np.random.randn(5, 1024)  # 5个样本
+    batch_test = np.random.randn(5, 2048)  # 5个样本
     batch_results = classifier.batch_predict(batch_test)
     print(f"\n批量预测结果: {batch_results}")

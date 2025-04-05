@@ -8,6 +8,42 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset, random_split
 
+
+# 绘制训练集中前10个样本的实部和虚部数据
+def plot_first_10_samples(train_dataset):
+    # 获取前10个样本
+    samples = [train_dataset[i] for i in range(10)]  # 确保获取的是前10个样本
+    
+    # 创建一个图形窗口
+    plt.figure(figsize=(15, 10))
+    
+    # 遍历前10个样本
+    for idx, sample in enumerate(samples):
+        # 检查样本的结构
+        if isinstance(sample, tuple) and len(sample) == 2:
+            data, label = sample
+        else:
+            raise ValueError(f"Unexpected sample structure: {sample}")
+        
+        # 将数据从Tensor转换为numpy数组
+        data = data.numpy()
+        
+        # 分离实部和虚部
+        real_part = data[:1024]
+        imaginary_part = data[1024:]
+        
+        # 绘制实部和虚部
+        plt.subplot(5, 2, idx + 1)  # 创建子图
+        plt.plot(real_part, label='Real Part')
+        plt.plot(imaginary_part, label='Imaginary Part')
+        plt.title(f'Sample {idx + 1} (Label: {label})')
+        plt.legend()
+        plt.grid(True)
+    
+    # 调整子图间距
+    plt.tight_layout()
+    plt.show()
+
 # 读取文件夹中的所有CSV文件
 def read_files_from_folder(folder_path):
     data = []
@@ -19,54 +55,24 @@ def read_files_from_folder(folder_path):
                 data.append(content)
     return data
 
-# 将文件里面的以逗号分隔的浮点数转换为列表
-def convert_to_list(file_content):
-    return [float(x) for x in file_content.split(',')]
+# 将文件内容按换行符分割为列表
+def split_to_list(file_content):
+    return [float(x) for x in file_content.split('\n') if x.strip()]  # 去掉空行
 
-# 将列表以 1024 个元素为一组进行分组
-def group_list(lst, group_size=1024):
-    return [lst[i:i+group_size] for i in range(0, len(lst), group_size)]
+# 将数据划分为长度为1024的片段
+def split_to_segments(data_list, segment_length=1024):
+    segments = [data_list[i:i + segment_length] for i in range(0, len(data_list), segment_length)]
+    return segments
 
-# 将分组后的列表划分为训练集和测试集，训练集占 80%，测试集占 20%（ 要求随机划分 ）
-def split_train_test(lst, train_ratio=0.8):
-    random.shuffle(lst)
-    split_index = int(len(lst) * train_ratio)
-    return lst[:split_index], lst[split_index:]
+# 归一化函数
+def normalize_data(data):
+    min_val = min(data)
+    max_val = max(data)
+    return [(x - min_val) / (max_val - min_val) for x in data]
 
-# 判断测试集是否为训练集的子集
-def is_subset(list1, list2):
-    set1 = set(tuple(lst) for lst in list1)
-    set2 = set(tuple(lst) for lst in list2)
-    return set2.issubset(set1)
-
-# 将训练集和测试集直接转化为 numpy 数组
-def convert_to_numpy(train_list, test_list):
-    return np.array(train_list), np.array(test_list)
-
-# 遍历一个文件夹，以一个列表输出所有文件名
-def get_file_name(file_path):
-    file_list = []
-    for root, dirs, files in os.walk(file_path):
-        for file in files:
-            if file.endswith('.dat'):
-                file_list.append(os.path.join(root, file))
-    return file_list
-
-# 读取npy文件，并将其转换为列表
-def read_npy(file_path):
-    return np.load(file_path).tolist()
-
-# 定义设备
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(device)
-
-# 参数配置
-INPUT_SIZE = 1024
-HIDDEN_SIZE = 512
-NUM_CLASSES = 8
-BATCH_SIZE = 64
-NUM_EPOCHS = 30
-LEARNING_RATE = 0.001
+# 将实部和虚部堆叠成一个2048长度的输出
+def stack_real_imaginary(real_part, imaginary_part):
+    return real_part.extend(imaginary_part)
 
 # 数据预处理函数
 def prepare_dataset(dataset_paths, keys):
@@ -76,17 +82,43 @@ def prepare_dataset(dataset_paths, keys):
     for idx, folder_path in enumerate(dataset_paths):
         # 读取并处理数据
         contents = read_files_from_folder(folder_path)
+        # print(type(contents[0]))
         for content in contents:
-            data_list = convert_to_list(content)
-            grouped = group_list(data_list)
-            
+            data_list = split_to_list(content)
+            real_part, imaginary_part = data_list[:len(data_list)//2], data_list[len(data_list)//2:]
+
+            # 分别对实部和虚部进行归一化
+            real_part = normalize_data(real_part)
+            imaginary_part = normalize_data(imaginary_part)
+
+            # 将实部和虚部按照相同的规则划分成多个1024长度的片段
+            real_segments = split_to_segments(real_part)
+            imaginary_segments = split_to_segments(imaginary_part)
+
+            # 合并实部和虚部的片段
+            combined_segments = [real + imag for real, imag in zip(real_segments, imaginary_segments)]
+
+            # 给合并数据加上噪声
+            for segment in combined_segments:
+                noise = np.random.normal(0, 0.1, len(segment))  # 均值为0，标准差为0.1的高斯噪声
+                segment += noise
+
+            # 归一化合并后的片段
+            for segment in combined_segments:
+                segment = normalize_data(segment)
+
             # 添加数据和标签
-            all_data.extend(grouped)
-            all_labels.extend([idx] * len(grouped))  # 使用索引作为类别标签
-    
+            all_data.extend(combined_segments)
+            all_labels.extend([idx] * len(combined_segments))  # 使用索引作为类别标签
+
+      
     # 转换为numpy数组
     X = np.array(all_data)
     y = np.array(all_labels)
+
+    # 检查数据和标签的形状
+    print(f"X shape: {X.shape}")  # 应该是 (样本数, 1024)
+    print(f"y shape: {y.shape}")  # 应该是 (样本数,)
     
     # 数据集划分
     dataset = TensorDataset(torch.FloatTensor(X), torch.LongTensor(y))
@@ -95,6 +127,18 @@ def prepare_dataset(dataset_paths, keys):
     train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
     
     return train_dataset, test_dataset
+
+# 定义设备
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(device)
+
+# 参数配置
+INPUT_SIZE = 2048
+HIDDEN_SIZE = 512
+NUM_CLASSES = 8
+BATCH_SIZE = 64
+NUM_EPOCHS = 30
+LEARNING_RATE = 0.001
 
 # 模型结构
 class Model(nn.Module):
@@ -168,7 +212,7 @@ def train_model(model, train_loader, test_loader):
         print(f'Epoch {epoch+1}/{NUM_EPOCHS} | Loss: {epoch_loss:.4f} | Acc: {acc:.4f}')
         
         # 保存最佳模型
-        if acc > ——_acc:
+        if acc > best_acc:
             best_acc = acc
             torch.save(model.state_dict(), 'model.pth')
     
@@ -181,18 +225,21 @@ def train_model(model, train_loader, test_loader):
 if __name__ == "__main__":
     # 数据准备
     dataset_paths = [
-        './dataset/128qam',
-        './dataset/16qam',
-        './dataset/256qam',
-        './dataset/32qam',
-        './dataset/64qam',
-        './dataset/8psk',
-        './dataset/bpsk',
-        './dataset/qpsk'
+        './dataset_iq/128qam_iq',
+        './dataset_iq/16qam_iq',
+        './dataset_iq/256qam_iq',
+        './dataset_iq/32qam_iq',
+        './dataset_iq/64qam_iq',
+        './dataset_iq/8psk_iq',
+        './dataset_iq/bpsk_iq',
+        './dataset_iq/qpsk_iq'
     ]
     keys = ['128qam', '16qam', '256qam', '32qam', '64qam', '8psk', 'bpsk', 'qpsk']
     
     train_dataset, test_dataset = prepare_dataset(dataset_paths, keys)
+
+    # 绘制训练集中前10个样本的实部和虚部数据
+    plot_first_10_samples(train_dataset)
     
     # 创建数据加载器
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
