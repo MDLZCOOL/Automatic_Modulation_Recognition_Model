@@ -225,14 +225,14 @@ def train_model(model, train_loader, test_loader):
 if __name__ == "__main__":
     # 数据准备
     dataset_paths = [
-        './dataset_iq/128qam_iq',
-        './dataset_iq/16qam_iq',
-        './dataset_iq/256qam_iq',
-        './dataset_iq/32qam_iq',
-        './dataset_iq/64qam_iq',
-        './dataset_iq/8psk_iq',
-        './dataset_iq/bpsk_iq',
-        './dataset_iq/qpsk_iq'
+        './dataset/128qam_iq',
+        './dataset/16qam_iq',
+        './dataset/256qam_iq',
+        './dataset/32qam_iq',
+        './dataset/64qam_iq',
+        './dataset/8psk_iq',
+        './dataset/bpsk_iq',
+        './dataset/qpsk_iq'
     ]
     keys = ['128qam', '16qam', '256qam', '32qam', '64qam', '8psk', 'bpsk', 'qpsk']
     
